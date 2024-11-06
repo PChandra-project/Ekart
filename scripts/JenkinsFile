@@ -1,0 +1,63 @@
+pipeline {
+    agent any
+    tools {
+        jdk 'jdk-17'
+        maven 'maven3'
+    }
+    
+    environment {
+        SCANNER_HOME= tool 'sonar-scanner'
+    }
+
+    stages {
+        stage('Git Checkout') {
+            steps {
+                git branch: 'main', changelog: false, credentialsId: 'b2622332-60b3-41db-9aa7-d4087dd8dea1', poll: false, url: 'https://github.com/PChandra-project/Ekart.git'
+            }
+        }
+        
+        stage('COMPILE') {
+            steps {
+                sh "mvn clean compile -DskipTests=true"
+            }
+        }
+        
+        stage('OWASP check') {
+            steps {
+                dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'DPC'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+        }
+        
+        stage('Sonarqube') {
+            steps {
+                withSonarQubeEnv('sonar') {
+                    sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=EKart \
+                    -Dsonar.java.binaries=. \
+                    -Dsonar.projectKey=EKart '''
+                }
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                sh "mvn clean package -DskipTests=true"
+            }
+        }
+        
+         
+        stage('Docker Build and Push') {
+            steps {
+                script{
+                    withDockerRegistry(credentialsId: '23a13e0f-ab4e-46a0-b7ae-b1d3b4addfd8', toolName: 'docker') {
+                    
+                         sh "docker build -t shopping-cart -f docker/Dockerfile ."
+                         sh "docker tag shopping-cart pc1407/shopping-cart:latest"
+                         sh "docker push pc1407/shopping-cart:latest"
+                    }  
+                }
+            }
+        }     
+    }
+}    
+
